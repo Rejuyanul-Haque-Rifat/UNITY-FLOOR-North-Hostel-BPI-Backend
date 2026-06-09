@@ -140,6 +140,35 @@ app.post('/verify-authentication', async (req, res) => {
   }
 });
 
+app.post('/phone-register', async (req, res) => {
+  try {
+    const { phone, pin } = req.body;
+    const uid = phone;
+    const password = pin + "00";
+    await db.ref(`custom_auth/${uid}`).set({ password });
+    const customToken = await admin.auth().createCustomToken(uid);
+    res.json({ token: customToken, uid });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/phone-login', async (req, res) => {
+  try {
+    const { phone, pin } = req.body;
+    const password = pin + "00";
+    const snapshot = await db.ref(`custom_auth/${phone}`).once('value');
+    if (!snapshot.exists() || snapshot.val().password !== password) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+    const customToken = await admin.auth().createCustomToken(phone);
+    res.json({ token: customToken });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {});
 module.exports = app;
