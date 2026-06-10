@@ -140,6 +140,19 @@ app.post('/verify-authentication', async (req, res) => {
   }
 });
 
+app.post('/update-user-email', async (req, res) => {
+  try {
+    const { uid, newEmail } = req.body;
+    if (!uid || !newEmail) {
+      return res.status(400).json({ error: 'Missing data' });
+    }
+    await admin.auth().updateUser(uid, { email: newEmail });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/admin-reset-pin', async (req, res) => {
   try {
     const { phone, newPin, adminSecret } = req.body;
