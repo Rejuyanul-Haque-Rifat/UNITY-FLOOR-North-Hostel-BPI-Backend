@@ -140,6 +140,29 @@ app.post('/verify-authentication', async (req, res) => {
   }
 });
 
+app.post('/admin-reset-pin', async (req, res) => {
+  try {
+    const { phone, newPin, adminSecret } = req.body;
+    if (adminSecret !== "BPI_SECRET_123") {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (!phone || !newPin || phone.length !== 11 || newPin.length !== 4) {
+      return res.status(400).json({ error: 'Invalid data' });
+    }
+    const snapshot = await db.ref('blood_donors').orderByChild('contact').equalTo(phone).once('value');
+    if (!snapshot.exists()) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const userData = Object.values(snapshot.val())[0];
+    const uid = userData.uid;
+    const newPassword = newPin + "00";
+    await admin.auth().updateUser(uid, { password: newPassword });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {});
 module.exports = app;
