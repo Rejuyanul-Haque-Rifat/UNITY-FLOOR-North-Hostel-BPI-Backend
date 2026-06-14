@@ -1,1 +1,0 @@
-# BPI-BLOOD-FINDER
