@@ -156,35 +156,25 @@ app.post('/update-user-email', async (req, res) => {
 app.post('/admin-reset-pin', async (req, res) => {
   try {
     const { phone, newPin, adminSecret } = req.body;
-    
     if (adminSecret !== "BPI_SECRET_123") {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    
     if (!phone || !newPin || phone.length !== 11 || newPin.length !== 4) {
       return res.status(400).json({ error: 'Invalid data' });
     }
-    
     const snapshot = await db.ref('blood_donors').orderByChild('contact').equalTo(phone).once('value');
     if (!snapshot.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
-
     const userKey = Object.keys(snapshot.val())[0];
     const userData = snapshot.val()[userKey];
     const email = userData.email || `${phone}@bpi.com`;
     const newPassword = newPin + "00";
-    let uid = userData.uid;
-
+    let uid;
     try {
-      if (uid) {
-        await admin.auth().updateUser(uid, { password: newPassword });
-      } else {
-        const userRecord = await admin.auth().getUserByEmail(email);
-        uid = userRecord.uid;
-        await admin.auth().updateUser(uid, { password: newPassword });
-        await db.ref(`blood_donors/${userKey}`).update({ uid: uid });
-      }
+      const userRecord = await admin.auth().getUserByEmail(email);
+      uid = userRecord.uid;
+      await admin.auth().updateUser(uid, { password: newPassword });
     } catch (authError) {
       if (authError.code === 'auth/user-not-found') {
         const newUser = await admin.auth().createUser({
@@ -192,19 +182,21 @@ app.post('/admin-reset-pin', async (req, res) => {
           password: newPassword,
           displayName: userData.name || 'BPI User'
         });
-        await db.ref(`blood_donors/${userKey}`).update({ uid: newUser.uid });
+        uid = newUser.uid;
       } else {
         throw authError;
       }
     }
-
-    await db.ref(`blood_donors/${userKey}`).update({ password: newPassword });
+    await db.ref(`blood_donors/${userKey}`).update({ 
+      uid: uid,
+      password: newPassword 
+    });
     res.json({ success: true });
-    
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {});
