@@ -32,6 +32,7 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/config', (req, res) => {
+  res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate');
   res.json({
     firebase: {
       apiKey: process.env.FIREBASE_API_KEY,
@@ -45,6 +46,10 @@ app.get('/api/config', (req, res) => {
     cloudinary: {
       cloudName: process.env.CLOUDINARY_CLOUD_NAME,
       apiKey: process.env.CLOUDINARY_API_KEY
+    },
+    telegram: {
+      botToken: process.env.TG_BOT_TOKEN,
+      chatId: process.env.TG_USER_ID
     }
   });
 });
@@ -232,6 +237,4 @@ app.post('/admin-reset-pin', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {});
 module.exports = app;
