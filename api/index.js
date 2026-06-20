@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const admin = require('firebase-admin');
 const crypto = require('crypto');
 const {
   generateRegistrationOptions,
@@ -13,7 +12,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-try {
+const rpName = 'BPI Blood Finder';
+const FRONTEND_ORIGIN = 'https://bpi-blood-finder.firebaseapp.com';
+
+function getAdmin() {
+  const admin = require('firebase-admin');
   if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.cert({
@@ -24,13 +27,8 @@ try {
       databaseURL: process.env.FIREBASE_DATABASE_URL
     });
   }
-} catch (error) {
-  console.error(error);
+  return admin;
 }
-
-const db = admin.database();
-const rpName = 'BPI Blood Finder';
-const FRONTEND_ORIGIN = 'https://bpi-blood-finder.firebaseapp.com';
 
 app.get('/', (req, res) => {
   res.send('BPI Blood Finder Backend is Running smoothly! 🚀');
@@ -77,6 +75,9 @@ app.get('/api/cloudinary-signature', (req, res) => {
 
 app.post('/generate-registration-options', async (req, res) => {
   try {
+    const admin = getAdmin();
+    const db = admin.database();
+    db.goOnline();
     const { uid, email, name, rpID } = req.body;
     const options = await generateRegistrationOptions({
       rpName,
@@ -94,11 +95,16 @@ app.post('/generate-registration-options', async (req, res) => {
     res.json(options);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  } finally {
+    if (admin.apps.length) getAdmin().database().goOffline();
   }
 });
 
 app.post('/verify-registration', async (req, res) => {
   try {
+    const admin = getAdmin();
+    const db = admin.database();
+    db.goOnline();
     const { uid, response, rpID } = req.body;
     const challengeSnap = await db.ref(`passkey_challenges/${uid}`).once('value');
     const expectedChallenge = challengeSnap.val();
@@ -130,11 +136,16 @@ app.post('/verify-registration', async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ error: error.message });
+  } finally {
+    if (admin.apps.length) getAdmin().database().goOffline();
   }
 });
 
 app.post('/generate-authentication-options', async (req, res) => {
   try {
+    const admin = getAdmin();
+    const db = admin.database();
+    db.goOnline();
     const { rpID } = req.body;
     const options = await generateAuthenticationOptions({
       rpID,
@@ -144,11 +155,16 @@ app.post('/generate-authentication-options', async (req, res) => {
     res.json(options);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  } finally {
+    if (admin.apps.length) getAdmin().database().goOffline();
   }
 });
 
 app.post('/verify-authentication', async (req, res) => {
   try {
+    const admin = getAdmin();
+    const db = admin.database();
+    db.goOnline();
     const { response, expectedChallenge, rpID } = req.body;
     const challengeSnap = await db.ref(`auth_challenges/${expectedChallenge}`).once('value');
     if (!challengeSnap.exists()) {
@@ -186,11 +202,14 @@ app.post('/verify-authentication', async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ error: error.message });
+  } finally {
+    if (admin.apps.length) getAdmin().database().goOffline();
   }
 });
 
 app.post('/update-user-email', async (req, res) => {
   try {
+    const admin = getAdmin();
     const { uid, newEmail } = req.body;
     if (!uid || !newEmail) {
       return res.status(400).json({ error: 'Missing data' });
@@ -204,6 +223,9 @@ app.post('/update-user-email', async (req, res) => {
 
 app.post('/admin-reset-pin', async (req, res) => {
   try {
+    const admin = getAdmin();
+    const db = admin.database();
+    db.goOnline();
     const { phone, newPin, adminSecret } = req.body;
     if (adminSecret !== process.env.ADMIN_SECRET) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -243,6 +265,8 @@ app.post('/admin-reset-pin', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  } finally {
+    if (admin.apps.length) getAdmin().database().goOffline();
   }
 });
 
