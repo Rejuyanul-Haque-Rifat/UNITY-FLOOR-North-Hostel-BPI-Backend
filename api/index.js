@@ -9,7 +9,18 @@ const {
 } = require('@simplewebauthn/server');
 
 const app = express();
-app.use(cors());
+
+const allowedOrigins = ['https://bpi-blood-finder.firebaseapp.com', 'http://localhost:5173', 'http://127.0.0.1:5500'];
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+}));
+
 app.use(express.json());
 
 const rpName = 'BPI Blood Finder';
@@ -31,30 +42,30 @@ function getAdmin() {
 }
 
 app.get('/', (req, res) => {
-  res.send('BPI Blood Finder Backend is Running smoothly! 🚀');
+  res.send('BPI Blood Finder Backend is Secure & Running! 🚀');
 });
 
-app.get('/api/config', (req, res) => {
-  res.setHeader('Cache-Control', 's-maxage=86400, stale-while-revalidate');
-  res.json({
-    firebase: {
-      apiKey: process.env.FIREBASE_API_KEY,
-      authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-      appId: process.env.FIREBASE_APP_ID,
-      databaseURL: process.env.FIREBASE_DATABASE_URL
-    },
-    cloudinary: {
-      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
-      apiKey: process.env.CLOUDINARY_API_KEY
-    },
-    telegram: {
-      botToken: process.env.TG_BOT_TOKEN,
-      chatId: process.env.TG_USER_ID
-    }
-  });
+app.post('/api/send-telegram', async (req, res) => {
+  try {
+    const { title, data } = req.body;
+    const botToken = process.env.TG_BOT_TOKEN;
+    const chatId = process.env.TG_USER_ID;
+    
+    if (!botToken || !chatId) return res.status(500).json({ error: 'Telegram credentials missing on server' });
+
+    const message = `<b>${title}</b>\n\n<b>নাম:</b> ${data.name || 'অজ্ঞাত'}\n<b>ফোন:</b> ${data.contact || 'নেই'}\n<b>ম্যাসেজ:</b> ${data.text || ''}`;
+    
+    const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' })
+    });
+    
+    const tgData = await tgRes.json();
+    res.json({ success: true, data: tgData });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get('/api/cloudinary-signature', (req, res) => {
