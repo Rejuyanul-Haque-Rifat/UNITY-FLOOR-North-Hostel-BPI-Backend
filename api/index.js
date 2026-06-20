@@ -13,19 +13,24 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : undefined,
-    }),
-    databaseURL: process.env.FIREBASE_DATABASE_URL
-  });
+try {
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/"/g, '') : undefined,
+      }),
+      databaseURL: process.env.FIREBASE_DATABASE_URL
+    });
+  }
+} catch (error) {
+  console.error(error);
 }
 
 const db = admin.database();
 const rpName = 'BPI Blood Finder';
+const FRONTEND_ORIGIN = 'https://bpi-blood-finder.firebaseapp.com';
 
 app.get('/', (req, res) => {
   res.send('BPI Blood Finder Backend is Running smoothly! 🚀');
@@ -97,10 +102,12 @@ app.post('/verify-registration', async (req, res) => {
     const { uid, response, rpID } = req.body;
     const challengeSnap = await db.ref(`passkey_challenges/${uid}`).once('value');
     const expectedChallenge = challengeSnap.val();
+    const expectedOrigin = req.headers.origin || FRONTEND_ORIGIN;
+    
     const verification = await verifyRegistrationResponse({
       response,
       expectedChallenge,
-      expectedOrigin: req.headers.origin,
+      expectedOrigin,
       expectedRPID: rpID,
     });
     if (verification.verified) {
@@ -154,10 +161,12 @@ app.post('/verify-authentication', async (req, res) => {
       return res.status(404).json({ error: 'Passkey not found' });
     }
     const passkey = passkeySnap.val();
+    const expectedOrigin = req.headers.origin || FRONTEND_ORIGIN;
+
     const verification = await verifyAuthenticationResponse({
       response,
       expectedChallenge,
-      expectedOrigin: req.headers.origin,
+      expectedOrigin,
       expectedRPID: rpID,
       authenticator: {
         credentialPublicKey: Buffer.from(passkey.credentialPublicKey, 'base64url'),
