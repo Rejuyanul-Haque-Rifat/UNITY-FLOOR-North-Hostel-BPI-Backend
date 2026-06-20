@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
+const crypto = require('crypto');
 const {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -19,7 +20,7 @@ if (!admin.apps.length) {
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : undefined,
     }),
-    databaseURL: "https://bpi-blood-finder-default-rtdb.firebaseio.com"
+    databaseURL: process.env.FIREBASE_DATABASE_URL
   });
 }
 
@@ -28,6 +29,40 @@ const rpName = 'BPI Blood Finder';
 
 app.get('/', (req, res) => {
   res.send('BPI Blood Finder Backend is Running smoothly! 🚀');
+});
+
+app.get('/api/config', (req, res) => {
+  res.json({
+    firebase: {
+      apiKey: process.env.FIREBASE_API_KEY,
+      authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+      appId: process.env.FIREBASE_APP_ID,
+      databaseURL: process.env.FIREBASE_DATABASE_URL
+    },
+    cloudinary: {
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      apiKey: process.env.CLOUDINARY_API_KEY
+    }
+  });
+});
+
+app.get('/api/cloudinary-signature', (req, res) => {
+  try {
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    
+    if (!apiSecret) throw new Error("Cloudinary secret missing");
+
+    const signatureString = `timestamp=${timestamp}${apiSecret}`;
+    const signature = crypto.createHash('sha1').update(signatureString).digest('hex');
+    
+    res.json({ timestamp, signature });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.post('/generate-registration-options', async (req, res) => {
@@ -156,7 +191,7 @@ app.post('/update-user-email', async (req, res) => {
 app.post('/admin-reset-pin', async (req, res) => {
   try {
     const { phone, newPin, adminSecret } = req.body;
-    if (adminSecret !== "BPI_SECRET_123") {
+    if (adminSecret !== process.env.ADMIN_SECRET) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     if (!phone || !newPin || phone.length !== 11 || newPin.length !== 4) {
@@ -196,7 +231,6 @@ app.post('/admin-reset-pin', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {});
