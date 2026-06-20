@@ -10,22 +10,8 @@ const {
 } = require('@simplewebauthn/server');
 
 const app = express();
-
-const allowedOrigins = ['https://bpi-blood-finder.firebaseapp.com', 'http://localhost:5173', 'http://127.0.0.1:5500'];
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  }
-}));
-
+app.use(cors());
 app.use(express.json());
-
-const rpName = 'BPI Blood Finder';
-const FRONTEND_ORIGIN = 'https://bpi-blood-finder.firebaseapp.com';
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -34,14 +20,15 @@ if (!admin.apps.length) {
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n').replace(/"/g, '') : undefined,
     }),
-    databaseURL: process.env.FIREBASE_DATABASE_URL
+    databaseURL: "https://bpi-blood-finder-default-rtdb.firebaseio.com"
   });
 }
 
 const db = admin.database();
+const rpName = 'BPI Blood Finder';
 
 app.get('/', (req, res) => {
-  res.send('BPI Blood Finder Backend is Secure & Running! 🚀');
+  res.send('BPI Blood Finder Backend is Running smoothly! 🚀');
 });
 
 app.post('/api/send-telegram', async (req, res) => {
@@ -50,7 +37,7 @@ app.post('/api/send-telegram', async (req, res) => {
     const botToken = process.env.TG_BOT_TOKEN;
     const chatId = process.env.TG_USER_ID;
     
-    if (!botToken || !chatId) return res.status(500).json({ error: 'Telegram credentials missing on server' });
+    if (!botToken || !chatId) return res.status(500).json({ error: 'Telegram credentials missing' });
 
     const message = `<b>${title}</b>\n\n<b>নাম:</b> ${data.name || 'অজ্ঞাত'}\n<b>ফোন:</b> ${data.contact || 'নেই'}\n<b>ম্যাসেজ:</b> ${data.text || ''}`;
     
@@ -110,12 +97,10 @@ app.post('/verify-registration', async (req, res) => {
     const { uid, response, rpID } = req.body;
     const challengeSnap = await db.ref(`passkey_challenges/${uid}`).once('value');
     const expectedChallenge = challengeSnap.val();
-    const expectedOrigin = req.headers.origin || FRONTEND_ORIGIN;
-    
     const verification = await verifyRegistrationResponse({
       response,
       expectedChallenge,
-      expectedOrigin,
+      expectedOrigin: req.headers.origin,
       expectedRPID: rpID,
     });
     if (verification.verified) {
@@ -169,12 +154,10 @@ app.post('/verify-authentication', async (req, res) => {
       return res.status(404).json({ error: 'Passkey not found' });
     }
     const passkey = passkeySnap.val();
-    const expectedOrigin = req.headers.origin || FRONTEND_ORIGIN;
-
     const verification = await verifyAuthenticationResponse({
       response,
       expectedChallenge,
-      expectedOrigin,
+      expectedOrigin: req.headers.origin,
       expectedRPID: rpID,
       authenticator: {
         credentialPublicKey: Buffer.from(passkey.credentialPublicKey, 'base64url'),
@@ -213,7 +196,7 @@ app.post('/update-user-email', async (req, res) => {
 app.post('/admin-reset-pin', async (req, res) => {
   try {
     const { phone, newPin, adminSecret } = req.body;
-    if (adminSecret !== process.env.ADMIN_SECRET) {
+    if (adminSecret !== "BPI_SECRET_123") {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     if (!phone || !newPin || phone.length !== 11 || newPin.length !== 4) {
@@ -254,4 +237,6 @@ app.post('/admin-reset-pin', async (req, res) => {
   }
 });
 
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {});
 module.exports = app;
