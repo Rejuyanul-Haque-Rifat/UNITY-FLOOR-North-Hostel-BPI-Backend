@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const admin = require('firebase-admin');
-const nodemailer = require('nodemailer'); // Added nodemailer
+const { Resend } = require('resend');
 const {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -27,33 +27,22 @@ if (!admin.apps.length) {
 
 const db = admin.database();
 const rpName = 'BPI Blood Finder';
-
-// SMTP Transporter Setup
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.SMTP_EMAIL,
-    pass: process.env.SMTP_PASSWORD
-  }
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 app.get('/', (req, res) => {
   res.send('BPI Blood Finder Backend is Running smoothly! 🚀');
 });
 
-// New Route for sending Password Reset Email via custom SMTP
 app.post('/api/send-reset-email', async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
-    // Generate action link via Firebase Admin SDK
     const actionCodeSettings = {
-      url: 'https://bpi-blood-finder.web.app/reset-password-set', // আপনার কাস্টম ফ্রন্টএন্ড রাউট
+      url: 'https://bpi-blood-finder.web.app/reset-password-set',
       handleCodeInApp: true
     };
     
-    // Create the reset link using Firebase
     const resetLink = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
 
     const emailHtml = `
@@ -103,17 +92,19 @@ app.post('/api/send-reset-email', async (req, res) => {
 </html>
     `;
 
-    const mailOptions = {
-      from: `"BPI Blood Finder" <${process.env.SMTP_EMAIL}>`,
+    const data = await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL || 'BPI Blood Finder <onboarding@resend.dev>',
       to: email,
       subject: 'পাসওয়ার্ড রিসেট করুন - BPI Blood Finder',
       html: emailHtml
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
+    if (data.error) {
+      return res.status(400).json({ error: data.error.message });
+    }
+
     res.json({ success: true, message: "Password reset email sent." });
   } catch (error) {
-    console.error("Error sending reset email:", error);
     res.status(500).json({ error: error.message });
   }
 });
