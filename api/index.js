@@ -228,8 +228,7 @@ app.post('/admin-reset-pin', async (req, res) => {
       }
     }
     await db.ref(`blood_donors/${userKey}`).update({ 
-      uid: uid,
-      password: newPassword 
+      uid: uid
     });
     res.json({ success: true });
   } catch (error) {
