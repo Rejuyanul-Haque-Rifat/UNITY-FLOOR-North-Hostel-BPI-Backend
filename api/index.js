@@ -236,6 +236,40 @@ app.post('/admin-reset-pin', async (req, res) => {
   }
 });
 
+app.post('/api/delete-user', async (req, res) => {
+  try {
+    const { uid, email, adminSecret } = req.body;
+    if (adminSecret !== "BPI_SECRET_123") {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (!uid && !email) {
+      return res.status(400).json({ error: 'Missing user identifier (uid or email)' });
+    }
+    
+    let targetUid = uid;
+    if (!targetUid && email) {
+      try {
+        const userRecord = await admin.auth().getUserByEmail(email);
+        targetUid = userRecord.uid;
+      } catch (authError) {
+        if (authError.code === 'auth/user-not-found') {
+          return res.json({ success: true, message: 'User already deleted' });
+        }
+        throw authError;
+      }
+    }
+    
+    if (targetUid) {
+      await admin.auth().deleteUser(targetUid);
+      return res.json({ success: true, message: 'User auth deleted successfully' });
+    } else {
+      return res.status(404).json({ error: 'User not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {});
 module.exports = app;
