@@ -238,7 +238,7 @@ app.post('/admin-reset-pin', async (req, res) => {
     if (!phone || !newPin || phone.length !== 11 || newPin.length !== 4) {
       return res.status(400).json({ error: 'Invalid data' });
     }
-    const snapshot = await db.ref('blood_donors').orderByChild('contact').equalTo(phone).once('value');
+    const snapshot = await db.ref('donors_private').orderByChild('contact').equalTo(phone).once('value');
     if (!snapshot.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -263,7 +263,7 @@ app.post('/admin-reset-pin', async (req, res) => {
         throw authError;
       }
     }
-    await db.ref(`blood_donors/${userKey}`).update({ 
+    await db.ref(`donors_private/${userKey}`).update({ 
       uid: uid
     });
     res.json({ success: true });
