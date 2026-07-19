@@ -121,7 +121,19 @@ app.post('/generate-registration-options', async (req, res) => {
         userVerification: 'preferred',
       },
     });
-    await db.ref(`passkey_challenges/${uid}`).set(options.challenge);
+    const now = Date.now();
+    await db.ref(`passkey_challenges/${uid}`).set(now);
+    
+    // Periodic cleanup (10% chance to run)
+    if (Math.random() < 0.1) {
+      const expireTime = now - 15 * 60 * 1000; // 15 mins
+      db.ref('passkey_challenges').orderByValue().endAt(expireTime).once('value')
+        .then(snap => {
+          const updates = {};
+          snap.forEach(child => { updates[child.key] = null; });
+          if (Object.keys(updates).length > 0) db.ref('passkey_challenges').update(updates);
+        }).catch(() => {});
+    }
     res.json(options);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -169,7 +181,19 @@ app.post('/generate-authentication-options', async (req, res) => {
       rpID,
       userVerification: 'preferred',
     });
-    await db.ref(`auth_challenges/${options.challenge}`).set(true);
+    const now = Date.now();
+    await db.ref(`auth_challenges/${options.challenge}`).set(now);
+    
+    // Periodic cleanup (10% chance to run)
+    if (Math.random() < 0.1) {
+      const expireTime = now - 15 * 60 * 1000; // 15 mins
+      db.ref('auth_challenges').orderByValue().endAt(expireTime).once('value')
+        .then(snap => {
+          const updates = {};
+          snap.forEach(child => { updates[child.key] = null; });
+          if (Object.keys(updates).length > 0) db.ref('auth_challenges').update(updates);
+        }).catch(() => {});
+    }
     res.json(options);
   } catch (error) {
     res.status(500).json({ error: error.message });
