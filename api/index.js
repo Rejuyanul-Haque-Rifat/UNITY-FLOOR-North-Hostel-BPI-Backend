@@ -25,6 +25,42 @@ if (!admin.apps.length) {
 }
 
 const db = admin.database();
+
+app.get('/api/migrate-db', async (req, res) => {
+  try {
+    const snapshot = await db.ref('blood_donors').once('value');
+    if (!snapshot.exists()) return res.json({ msg: 'No data' });
+    
+    const donors = snapshot.val();
+    const donorsIndex = {};
+    const donorsPrivate = {};
+    const donorsByGroup = {};
+
+    for (const [id, data] of Object.entries(donors)) {
+      donorsIndex[id] = {
+        n: data.name || '', bg: data.bloodGroup || '',
+        a: data.address || '', ld: data.lastDonation || '',
+        dc: data.donationCount || 0, p: data.photoUrl || '',
+        hp: data.hidePhoto || false, hc: data.hideContact || false,
+        v: data.isVerified || false, u: data.updatedAt || Date.now(),
+        d: data.deleted || false
+      };
+      donorsPrivate[id] = { contact: data.contact || '', email: data.email || '', uid: data.uid || '' };
+      
+      if (data.bloodGroup && !data.deleted) {
+        const safeGroup = data.bloodGroup.replace('+', '_PLUS').replace('-', '_MINUS');
+        if (!donorsByGroup[safeGroup]) donorsByGroup[safeGroup] = {};
+        donorsByGroup[safeGroup][id] = data.updatedAt || Date.now();
+      }
+    }
+
+    await db.ref().update({ 'donors_index': donorsIndex, 'donors_private': donorsPrivate, 'donors_by_group': donorsByGroup });
+    res.json({ success: true, count: Object.keys(donorsIndex).length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 const rpName = 'BPI Blood Finder';
 
 app.get('/', (req, res) => {
@@ -266,6 +302,64 @@ app.post('/api/delete-user', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+const zlib = require('zlib');
+const util = require('util');
+const brotliCompress = util.promisify(zlib.brotliCompress);
+
+app.get('/api/donors/full-dump', async (req, res) => {
+  try {
+    // 1. Fetch entire database from Firebase
+    const snapshot = await db.ref('blood_donors').once('value');
+    const data = snapshot.val() || {};
+    
+    // 2. Convert to JSON string
+    const jsonString = JSON.stringify(data);
+    
+    // 3. Compress using Brotli to bypass Vercel 4.5MB limit and save bandwidth
+    const compressed = await brotliCompress(jsonString, {
+      params: {
+        [zlib.constants.BROTLI_PARAM_QUALITY]: 4, // Balance between speed and compression ratio
+      }
+    });
+
+    // 4. Set headers for Vercel Edge Caching (Cache for 1 hour, serve stale for 1 day)
+    res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=86400');
+    res.setHeader('Content-Encoding', 'br');
+    res.setHeader('Content-Type', 'application/json');
+    
+    // 5. Send compressed buffer
+    res.send(compressed);
+  } catch (error) {
+    console.error('Full dump error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/donors/delta', async (req, res) => {
+  try {
+    const { since } = req.query;
+    if (!since) {
+      return res.status(400).json({ error: 'Missing "since" timestamp' });
+    }
+
+    const timestamp = parseInt(since, 10);
+    
+    // Fetch only records updated AFTER the provided timestamp
+    const snapshot = await db.ref('blood_donors')
+      .orderByChild('updatedAt')
+      .startAt(timestamp)
+      .once('value');
+      
+    const data = snapshot.val() || {};
+    
+    // Small payload, standard JSON is fine
+    res.json(data);
+  } catch (error) {
+    console.error('Delta fetch error:', error);
     res.status(500).json({ error: error.message });
   }
 });
