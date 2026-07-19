@@ -312,8 +312,8 @@ const brotliCompress = util.promisify(zlib.brotliCompress);
 
 app.get('/api/donors/full-dump', async (req, res) => {
   try {
-    // 1. Fetch entire database from Firebase
-    const snapshot = await db.ref('blood_donors').once('value');
+    // 1. Fetch entire index from Firebase
+    const snapshot = await db.ref('donors_index').once('value');
     const data = snapshot.val() || {};
     
     // 2. Convert to JSON string
@@ -349,8 +349,8 @@ app.get('/api/donors/delta', async (req, res) => {
     const timestamp = parseInt(since, 10);
     
     // Fetch only records updated AFTER the provided timestamp
-    const snapshot = await db.ref('blood_donors')
-      .orderByChild('updatedAt')
+    const snapshot = await db.ref('donors_index')
+      .orderByChild('u')
       .startAt(timestamp)
       .once('value');
       
