@@ -43,7 +43,7 @@ app.get('/api/migrate-db', async (req, res) => {
         dc: data.donationCount || 0, p: data.photoUrl || '',
         hp: data.hidePhoto || false, hc: data.hideContact || false,
         v: data.isVerified || false, u: data.updatedAt || Date.now(),
-        d: data.deleted || false
+        d: data.deleted || false, c: data.hideContact ? '' : (data.contact || '')
       };
       donorsPrivate[id] = { contact: data.contact || '', email: data.email || '', uid: data.uid || '' };
       
