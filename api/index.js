@@ -106,6 +106,41 @@ app.get('/api/cloudinary-signature', (req, res) => {
   }
 });
 
+app.post('/api/cloudinary-delete', async (req, res) => {
+  try {
+    const { public_id } = req.body;
+    if (!public_id) {
+      return res.status(400).json({ error: "public_id is required" });
+    }
+
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    const apiKey = "723399534863679"; // Using the API Key from upload.js
+    
+    if (!apiSecret) throw new Error("Cloudinary secret missing");
+
+    // Cloudinary requires signature with parameters sorted alphabetically
+    const signatureString = `public_id=${public_id}&timestamp=${timestamp}${apiSecret}`;
+    const signature = crypto.createHash('sha1').update(signatureString).digest('hex');
+    
+    const formData = new URLSearchParams();
+    formData.append('public_id', public_id);
+    formData.append('api_key', apiKey);
+    formData.append('timestamp', timestamp);
+    formData.append('signature', signature);
+
+    const response = await fetch(`https://api.cloudinary.com/v1_1/dghxevycq/image/destroy`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/generate-registration-options', async (req, res) => {
   try {
     const { uid, email, name, rpID } = req.body;
@@ -121,19 +156,7 @@ app.post('/generate-registration-options', async (req, res) => {
         userVerification: 'preferred',
       },
     });
-    const now = Date.now();
-    await db.ref(`passkey_challenges/${uid}`).set(now);
-    
-    // Periodic cleanup (10% chance to run)
-    if (Math.random() < 0.1) {
-      const expireTime = now - 15 * 60 * 1000; // 15 mins
-      db.ref('passkey_challenges').orderByValue().endAt(expireTime).once('value')
-        .then(snap => {
-          const updates = {};
-          snap.forEach(child => { updates[child.key] = null; });
-          if (Object.keys(updates).length > 0) db.ref('passkey_challenges').update(updates);
-        }).catch(() => {});
-    }
+    await db.ref(`passkey_challenges/${uid}`).set(options.challenge);
     res.json(options);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -181,19 +204,7 @@ app.post('/generate-authentication-options', async (req, res) => {
       rpID,
       userVerification: 'preferred',
     });
-    const now = Date.now();
-    await db.ref(`auth_challenges/${options.challenge}`).set(now);
-    
-    // Periodic cleanup (10% chance to run)
-    if (Math.random() < 0.1) {
-      const expireTime = now - 15 * 60 * 1000; // 15 mins
-      db.ref('auth_challenges').orderByValue().endAt(expireTime).once('value')
-        .then(snap => {
-          const updates = {};
-          snap.forEach(child => { updates[child.key] = null; });
-          if (Object.keys(updates).length > 0) db.ref('auth_challenges').update(updates);
-        }).catch(() => {});
-    }
+    await db.ref(`auth_challenges/${options.challenge}`).set(true);
     res.json(options);
   } catch (error) {
     res.status(500).json({ error: error.message });
