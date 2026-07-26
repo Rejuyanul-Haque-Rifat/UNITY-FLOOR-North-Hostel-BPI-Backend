@@ -258,7 +258,8 @@ app.post('/update-user-email', async (req, res) => {
       return res.status(400).json({ error: 'Missing data' });
     }
     await admin.auth().updateUser(uid, { email: newEmail });
-    res.json({ success: true });
+    const customToken = await admin.auth().createCustomToken(uid);
+    res.json({ success: true, token: customToken });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
