@@ -308,6 +308,142 @@ app.post('/admin-reset-pin', async (req, res) => {
   }
 });
 
+// --- START SECURE AUTH ENDPOINTS ---
+app.post('/api/register', async (req, res) => {
+  try {
+    const { contact, pin, name, bloodGroup, lastDonation, address } = req.body;
+    
+    if (!contact || !pin || contact.length !== 11 || pin.length !== 4) {
+      return res.status(400).json({ error: 'Invalid phone or PIN format' });
+    }
+
+    const email = `${contact}@bpi.com`;
+    const password = `${pin}00`;
+
+    const lookupSnap = await db.ref(`user_lookup/${contact}`).once('value');
+    if (lookupSnap.exists()) {
+      return res.status(409).json({ error: 'এই ফোন নাম্বার দিয়ে ইতিমধ্যে একটি অ্যাকাউন্ট রয়েছে' });
+    }
+    
+    let uid;
+    try {
+      const userRecord = await admin.auth().createUser({
+        email,
+        password,
+        displayName: name
+      });
+      uid = userRecord.uid;
+    } catch (authErr) {
+      if (authErr.code === 'auth/email-already-exists') {
+        return res.status(409).json({ error: 'এই ফোন নাম্বার দিয়ে ইতিমধ্যে একটি অ্যাকাউন্ট রয়েছে' });
+      }
+      throw authErr;
+    }
+
+    const newDonorRef = db.ref('blood_donors').push();
+    const donorId = newDonorRef.key;
+    
+    const updates = {};
+    updates[`blood_donors/${donorId}`] = {
+      uid,
+      email,
+      name: name || '',
+      contact,
+      bloodGroup: bloodGroup || '',
+      lastDonation: lastDonation || '',
+      address: address || '',
+      isAvailable: true,
+      joinedAt: new Date().toISOString(),
+      updatedAt: Date.now(),
+      donationCount: 0
+    };
+    updates[`user_lookup/${contact}`] = { uid, email };
+    
+    try {
+      await db.ref().update(updates);
+    } catch (dbErr) {
+      await admin.auth().deleteUser(uid).catch(() => {});
+      throw dbErr;
+    }
+    
+    const customToken = await admin.auth().createCustomToken(uid);
+    res.json({ success: true, token: customToken, uid });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+const loginAttempts = {};
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const { contact, pin } = req.body;
+    
+    if (!contact || !pin) {
+      return res.status(400).json({ error: 'Missing credentials' });
+    }
+    
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    const now = Date.now();
+    if (loginAttempts[ip] && loginAttempts[ip].count >= 10 && (now - loginAttempts[ip].timestamp) < 15 * 60 * 1000) {
+      return res.status(429).json({ error: 'Too many attempts. Please try again after 15 minutes.' });
+    }
+    
+    let email = `${contact}@bpi.com`;
+    const lookupSnap = await db.ref(`user_lookup/${contact}`).once('value');
+    if (lookupSnap.exists() && lookupSnap.val().email) {
+      email = lookupSnap.val().email;
+    } else {
+       const donorsSnap = await db.ref('blood_donors').orderByChild('contact').equalTo(contact).once('value');
+       if (donorsSnap.exists()) {
+         const firstKey = Object.keys(donorsSnap.val())[0];
+         if (donorsSnap.val()[firstKey].email) {
+           email = donorsSnap.val()[firstKey].email;
+         }
+       }
+    }
+
+    const password = `${pin}00`;
+    const apiKey = process.env.FIREBASE_WEB_API_KEY;
+    
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Server misconfiguration: FIREBASE_WEB_API_KEY missing' });
+    }
+
+    const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        password,
+        returnSecureToken: true
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      if (!loginAttempts[ip]) loginAttempts[ip] = { count: 0, timestamp: now };
+      loginAttempts[ip].count += 1;
+      loginAttempts[ip].timestamp = now;
+      
+      return res.status(401).json({ error: 'ফোন নাম্বার অথবা পিন সঠিক নয়' });
+    }
+    
+    if (loginAttempts[ip]) delete loginAttempts[ip];
+    
+    const uid = data.localId;
+    const customToken = await admin.auth().createCustomToken(uid);
+    
+    res.json({ success: true, token: customToken, uid });
+    
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+// --- END SECURE AUTH ENDPOINTS ---
+
 app.post('/api/delete-user', async (req, res) => {
   try {
     const { uid, email, adminSecret } = req.body;
