@@ -575,6 +575,13 @@ app.post('/api/notifications/send', async (req, res) => {
         ...(image && { image })
       },
       webpush: {
+        headers: {
+          Urgency: 'high'
+        },
+        notification: {
+          requireInteraction: true,
+          vibrate: [200, 100, 200, 100, 200, 100, 200]
+        },
         fcmOptions: {
           link: clickAction
         }
