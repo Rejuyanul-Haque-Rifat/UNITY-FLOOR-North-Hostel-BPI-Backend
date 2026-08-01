@@ -116,9 +116,10 @@ app.post('/api/cloudinary-delete', async (req, res) => {
 
     const timestamp = Math.round(new Date().getTime() / 1000);
     const apiSecret = process.env.CLOUDINARY_API_SECRET;
-    const apiKey = "723399534863679"; // Using the API Key from upload.js
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
     
-    if (!apiSecret) throw new Error("Cloudinary secret missing");
+    if (!apiSecret || !apiKey || !cloudName) throw new Error("Cloudinary credentials missing");
 
     // Cloudinary requires signature with parameters sorted alphabetically
     const signatureString = `public_id=${public_id}&timestamp=${timestamp}${apiSecret}`;
@@ -130,7 +131,7 @@ app.post('/api/cloudinary-delete', async (req, res) => {
     formData.append('timestamp', timestamp);
     formData.append('signature', signature);
 
-    const response = await fetch(`https://api.cloudinary.com/v1_1/dghxevycq/image/destroy`, {
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/destroy`, {
       method: 'POST',
       body: formData
     });
