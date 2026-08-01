@@ -557,7 +557,7 @@ app.post('/api/notifications/subscribe', async (req, res) => {
 
 app.post('/api/notifications/send', async (req, res) => {
   try {
-    const { title, body, image, topic = 'all_users', adminSecret, clickAction = '/' } = req.body;
+    const { title, body, image, mode = 'bulk', specificTarget, scheduleTime, adminSecret, clickAction = '/' } = req.body;
     
     // Simple admin authentication
     if (adminSecret !== "BPI_SECRET_123") {
@@ -567,27 +567,50 @@ app.post('/api/notifications/send', async (req, res) => {
     if (!title || !body) {
       return res.status(400).json({ error: 'Title and body are required' });
     }
+
+    let targetTopic = 'all_users';
+    if (mode === 'specific' && specificTarget) {
+      // Allow targeting specific blood groups (e.g. group_O+) or phone numbers (user_017...)
+      targetTopic = specificTarget;
+    }
     
+    // For scheduled notifications, we send a data-only message so it doesn't pop up immediately
+    const isScheduled = mode === 'schedule' && scheduleTime;
+
     const message = {
-      notification: {
+      topic: targetTopic
+    };
+
+    if (isScheduled) {
+      // Data-only payload for Service Worker to intercept and schedule
+      message.data = {
+        title,
+        body,
+        ...(image && { image }),
+        clickAction,
+        scheduleTime, // ISO string or timestamp
+        isScheduled: 'true'
+      };
+      // Webpush config for high priority
+      message.webpush = {
+        headers: { Urgency: 'high' }
+      };
+    } else {
+      // Normal immediate notification payload
+      message.notification = {
         title,
         body,
         ...(image && { image })
-      },
-      webpush: {
-        headers: {
-          Urgency: 'high'
-        },
+      };
+      message.webpush = {
+        headers: { Urgency: 'high' },
         notification: {
           requireInteraction: true,
           vibrate: [200, 100, 200, 100, 200, 100, 200]
         },
-        fcmOptions: {
-          link: clickAction
-        }
-      },
-      topic
-    };
+        fcmOptions: { link: clickAction }
+      };
+    }
     
     const response = await admin.messaging().send(message);
     res.json({ success: true, messageId: response });
