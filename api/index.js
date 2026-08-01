@@ -538,6 +538,59 @@ app.get('/api/donors/delta', async (req, res) => {
   }
 });
 
+// --- START NOTIFICATION ENDPOINTS ---
+app.post('/api/notifications/subscribe', async (req, res) => {
+  try {
+    const { token, topic = 'all_users' } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: 'FCM Token is required' });
+    }
+    
+    // Subscribe the token to the given topic
+    await admin.messaging().subscribeToTopic([token], topic);
+    res.json({ success: true, message: `Successfully subscribed to topic: ${topic}` });
+  } catch (error) {
+    console.error('Subscription error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/notifications/send', async (req, res) => {
+  try {
+    const { title, body, image, topic = 'all_users', adminSecret, clickAction = '/' } = req.body;
+    
+    // Simple admin authentication
+    if (adminSecret !== "BPI_SECRET_123") {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    if (!title || !body) {
+      return res.status(400).json({ error: 'Title and body are required' });
+    }
+    
+    const message = {
+      notification: {
+        title,
+        body,
+        ...(image && { image })
+      },
+      webpush: {
+        fcmOptions: {
+          link: clickAction
+        }
+      },
+      topic
+    };
+    
+    const response = await admin.messaging().send(message);
+    res.json({ success: true, messageId: response });
+  } catch (error) {
+    console.error('Notification send error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+// --- END NOTIFICATION ENDPOINTS ---
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {});
 module.exports = app;
