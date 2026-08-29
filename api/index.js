@@ -557,7 +557,7 @@ app.post('/api/notifications/subscribe', async (req, res) => {
 
 app.post('/api/notifications/send', async (req, res) => {
   try {
-    const { title, body, image, mode = 'bulk', specificTarget, scheduleTime, adminSecret, clickAction = '/' } = req.body;
+    const { title, body, image, mode = 'bulk', specificTarget, target, scheduleTime, adminSecret, clickAction = '/notice' } = req.body;
     
     // Simple admin authentication
     if (adminSecret !== "BPI_SECRET_123") {
@@ -569,13 +569,14 @@ app.post('/api/notifications/send', async (req, res) => {
     }
 
     let targetTopic = 'all_users';
-    if (mode === 'specific' && specificTarget) {
-      // Allow targeting specific blood groups (e.g. group_O+) or phone numbers (user_017...)
-      targetTopic = specificTarget;
+    const effectiveTarget = specificTarget || target;
+    if (mode === 'specific' && effectiveTarget) {
+      // Allow targeting specific phone numbers (user_017...) or groups
+      targetTopic = effectiveTarget;
     }
     
     // For scheduled notifications, we send a data-only message so it doesn't pop up immediately
-    const isScheduled = mode === 'schedule' && scheduleTime;
+    const isScheduled = Boolean(scheduleTime);
 
     const message = {
       topic: targetTopic
