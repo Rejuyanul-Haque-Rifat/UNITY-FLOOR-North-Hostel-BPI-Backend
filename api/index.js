@@ -555,6 +555,22 @@ app.post('/api/notifications/subscribe', async (req, res) => {
   }
 });
 
+
+app.post('/api/notifications/unsubscribe', async (req, res) => {
+  try {
+    const { token, topic } = req.body;
+    if (!token || !topic) {
+      return res.status(400).json({ error: 'FCM Token and topic are required' });
+    }
+    
+    await admin.messaging().unsubscribeFromTopic([token], topic);
+    res.json({ success: true, message: `Successfully unsubscribed from topic: ${topic}` });
+  } catch (error) {
+    console.error('Unsubscription error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/notifications/send', async (req, res) => {
   try {
     const { title, body, image, mode = 'bulk', specificTarget, target, scheduleTime, adminSecret, clickAction = '/notice' } = req.body;
