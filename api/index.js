@@ -76,14 +76,19 @@ app.post('/api/send-telegram', async (req, res) => {
     
     if (!botToken || !chatId) return res.status(500).json({ error: 'Telegram credentials missing' });
 
-    const message = `<b>${title}</b>\n\n<b>নাম:</b> ${data.name || 'অজ্ঞাত'}\n<b>ফোন:</b> ${data.contact || 'নেই'}\n<b>ম্যাসেজ:</b> ${data.text || ''}`;
+    const message = `<b>${title}</b>\n\n<b>নাম:</b> ${data?.name || 'অজ্ঞাত'}\n<b>ফোন:</b> ${data?.contact || 'নেই'}\n<b>ম্যাসেজ:</b> ${data?.text || ''}`;
     
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+
     const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' })
+        body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' }),
+        signal: controller.signal
     });
     
+    clearTimeout(timeout);
     const tgData = await tgRes.json();
     res.json({ success: true, data: tgData });
   } catch (error) {
