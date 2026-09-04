@@ -580,7 +580,6 @@ app.post('/api/notifications/send', async (req, res) => {
   try {
     const { title, body, image, mode = 'bulk', specificTarget, target, scheduleTime, adminSecret, clickAction = '/notice' } = req.body;
     
-    // Simple admin authentication
     if (adminSecret !== "BPI_SECRET_123") {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -589,50 +588,71 @@ app.post('/api/notifications/send', async (req, res) => {
       return res.status(400).json({ error: 'Title and body are required' });
     }
 
+    const cleanBody = body
+      .replace(/&amp;nbsp;/gi, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&#160;/gi, ' ')
+      .trim();
+
     let targetTopic = 'all_users';
     const effectiveTarget = specificTarget || target;
     if (mode === 'specific' && effectiveTarget) {
-      // Allow targeting specific phone numbers (user_017...) or groups
       targetTopic = effectiveTarget;
     }
     
-    // For scheduled notifications, we send a data-only message so it doesn't pop up immediately
-    const isScheduled = Boolean(scheduleTime);
-
-    const message = {
-      topic: targetTopic
-    };
+    const isScheduled = Boolean(scheduleTime && new Date(scheduleTime).getTime() > Date.now());
 
     if (isScheduled) {
-      // Data-only payload for Service Worker to intercept and schedule
-      message.data = {
+      await db.ref('scheduled_notifications').push({
         title,
-        body,
-        ...(image && { image }),
+        body: cleanBody,
+        image: image || null,
+        mode,
+        targetTopic,
+        scheduleTime,
         clickAction,
-        scheduleTime, // ISO string or timestamp
-        isScheduled: 'true'
-      };
-      // Webpush config for high priority
-      message.webpush = {
-        headers: { Urgency: 'high' }
-      };
-    } else {
-      // Normal immediate notification payload
-      message.notification = {
+        createdAt: Date.now(),
+        status: 'scheduled'
+      });
+      return res.json({ success: true, scheduled: true, message: 'Notification scheduled successfully' });
+    }
+
+    const message = {
+      topic: targetTopic,
+      notification: {
         title,
-        body,
+        body: cleanBody,
         ...(image && { image })
-      };
-      message.webpush = {
-        headers: { Urgency: 'high' },
+      },
+      data: {
+        title,
+        body: cleanBody,
+        ...(image && { image }),
+        clickAction: clickAction || '/notice',
+        url: clickAction || '/notice'
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          clickAction: clickAction || '/notice'
+        }
+      },
+      webpush: {
+        headers: {
+          Urgency: 'high',
+          urgency: 'high',
+          TTL: '86400'
+        },
         notification: {
           requireInteraction: true,
           vibrate: [200, 100, 200, 100, 200, 100, 200]
         },
-        fcmOptions: { link: clickAction }
-      };
-    }
+        fcmOptions: {
+          link: clickAction || '/notice'
+        }
+      }
+    };
     
     const response = await admin.messaging().send(message);
     res.json({ success: true, messageId: response });
