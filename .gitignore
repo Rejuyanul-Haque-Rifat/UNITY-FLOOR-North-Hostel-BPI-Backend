@@ -1,7 +1,7 @@
 # Node.js / npm
 node_modules/
-# Environment variables
 .env
+serviceAccountKey.json
 # Logs
 logs/
 *.log
