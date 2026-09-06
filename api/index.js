@@ -29,34 +29,9 @@ const db = admin.database();
 
 app.get('/api/migrate-db', async (req, res) => {
   try {
-    const snapshot = await db.ref('blood_donors').once('value');
+    const snapshot = await db.ref('boarders').once('value');
     if (!snapshot.exists()) return res.json({ msg: 'No data' });
-    
-    const donors = snapshot.val();
-    const donorsIndex = {};
-    const donorsPrivate = {};
-    const donorsByGroup = {};
-
-    for (const [id, data] of Object.entries(donors)) {
-      donorsIndex[id] = {
-        n: data.name || '', bg: data.bloodGroup || '',
-        a: data.address || '', ld: data.lastDonation || '',
-        dc: data.donationCount || 0, p: data.photoUrl || '',
-        hp: data.hidePhoto || false, hc: data.hideContact || false,
-        v: data.isVerified || false, u: data.updatedAt || Date.now(),
-        d: data.deleted || false, c: data.hideContact ? '' : (data.contact || '')
-      };
-      donorsPrivate[id] = { contact: data.contact || '', email: data.email || '', uid: data.uid || '' };
-      
-      if (data.bloodGroup && !data.deleted) {
-        const safeGroup = data.bloodGroup.replace('+', '_PLUS').replace('-', '_MINUS');
-        if (!donorsByGroup[safeGroup]) donorsByGroup[safeGroup] = {};
-        donorsByGroup[safeGroup][id] = data.updatedAt || Date.now();
-      }
-    }
-
-    await db.ref().update({ 'donors_index': donorsIndex, 'donors_private': donorsPrivate, 'donors_by_group': donorsByGroup });
-    res.json({ success: true, count: Object.keys(donorsIndex).length });
+    res.json({ success: true, count: Object.keys(snapshot.val()).length });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -278,37 +253,51 @@ app.post('/admin-reset-pin', async (req, res) => {
     if (adminSecret !== "BPI_SECRET_123") {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    if (!phone || !newPin || phone.length !== 11 || newPin.length !== 4) {
+    if (!phone || !newPin || phone.length !== 11 || newPin.length !== 6) {
       return res.status(400).json({ error: 'Invalid data' });
     }
-    const snapshot = await db.ref('donors_private').orderByChild('contact').equalTo(phone).once('value');
-    if (!snapshot.exists()) {
+    let uid = null;
+    let email = `${phone}@bpi.com`;
+    let displayName = 'Unity Boarder';
+
+    const lookupSnap = await db.ref(`user_lookup/${phone}`).once('value');
+    if (lookupSnap.exists()) {
+      const lookup = lookupSnap.val();
+      if (lookup.uid) uid = lookup.uid;
+      if (lookup.email) email = lookup.email;
+    }
+
+    if (!uid) {
+      const snapshot = await db.ref('boarders').orderByChild('contact').equalTo(phone).once('value');
+      if (snapshot.exists()) {
+        const userKey = Object.keys(snapshot.val())[0];
+        const userData = snapshot.val()[userKey];
+        uid = userData.uid || userKey;
+        if (userData.email) email = userData.email;
+        if (userData.name) displayName = userData.name;
+      }
+    }
+
+    if (!uid) {
       return res.status(404).json({ error: 'User not found' });
     }
-    const userKey = Object.keys(snapshot.val())[0];
-    const userData = snapshot.val()[userKey];
-    const email = userData.email || `${phone}@bpi.com`;
-    const newPassword = newPin + "00";
-    let uid;
+
+    const newPassword = newPin;
     try {
-      const userRecord = await admin.auth().getUserByEmail(email);
-      uid = userRecord.uid;
       await admin.auth().updateUser(uid, { password: newPassword });
     } catch (authError) {
       if (authError.code === 'auth/user-not-found') {
         const newUser = await admin.auth().createUser({
-          email: email,
+          uid,
+          email,
           password: newPassword,
-          displayName: userData.name || 'BPI User'
+          displayName
         });
         uid = newUser.uid;
       } else {
         throw authError;
       }
     }
-    await db.ref(`donors_private/${userKey}`).update({ 
-      uid: uid
-    });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -318,14 +307,14 @@ app.post('/admin-reset-pin', async (req, res) => {
 // --- START SECURE AUTH ENDPOINTS ---
 app.post('/api/register', async (req, res) => {
   try {
-    const { contact, pin, name, bloodGroup, lastDonation, address } = req.body;
+    const { contact, pin, name, room, department, session, semester, status, photoUrl, bio, hideContact, hidePhoto } = req.body;
     
-    if (!contact || !pin || contact.length !== 11 || pin.length !== 4) {
+    if (!contact || !pin || contact.length !== 11 || pin.length !== 6) {
       return res.status(400).json({ error: 'Invalid phone or PIN format' });
     }
 
     const email = `${contact}@bpi.com`;
-    const password = `${pin}00`;
+    const password = pin;
 
     const lookupSnap = await db.ref(`user_lookup/${contact}`).once('value');
     if (lookupSnap.exists()) {
@@ -347,22 +336,26 @@ app.post('/api/register', async (req, res) => {
       throw authErr;
     }
 
-    const newDonorRef = db.ref('blood_donors').push();
-    const donorId = newDonorRef.key;
-    
     const updates = {};
-    updates[`blood_donors/${donorId}`] = {
+    updates[`boarders/${uid}`] = {
+      id: uid,
       uid,
       email,
       name: name || '',
       contact,
-      bloodGroup: bloodGroup || '',
-      lastDonation: lastDonation || '',
-      address: address || '',
-      isAvailable: true,
+      phoneNumber: contact,
+      room: room || '301',
+      department: department || '',
+      session: session || '',
+      semester: semester || '',
+      batch: session || '2023-24',
+      status: status || 'current',
+      photoUrl: photoUrl || '',
+      bio: bio || '',
+      hideContact: Boolean(hideContact),
+      hidePhoto: Boolean(hidePhoto),
       joinedAt: new Date().toISOString(),
-      updatedAt: Date.now(),
-      donationCount: 0
+      updatedAt: Date.now()
     };
     updates[`user_lookup/${contact}`] = { uid, email };
     
@@ -387,8 +380,8 @@ app.post('/api/login', async (req, res) => {
   try {
     const { contact, pin } = req.body;
     
-    if (!contact || !pin) {
-      return res.status(400).json({ error: 'Missing credentials' });
+    if (!contact || !pin || pin.length !== 6) {
+      return res.status(400).json({ error: 'Missing or invalid credentials' });
     }
     
     const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
@@ -402,16 +395,16 @@ app.post('/api/login', async (req, res) => {
     if (lookupSnap.exists() && lookupSnap.val().email) {
       email = lookupSnap.val().email;
     } else {
-       const donorsSnap = await db.ref('blood_donors').orderByChild('contact').equalTo(contact).once('value');
-       if (donorsSnap.exists()) {
-         const firstKey = Object.keys(donorsSnap.val())[0];
-         if (donorsSnap.val()[firstKey].email) {
-           email = donorsSnap.val()[firstKey].email;
+       const boardersSnap = await db.ref('boarders').orderByChild('contact').equalTo(contact).once('value');
+       if (boardersSnap.exists()) {
+         const firstKey = Object.keys(boardersSnap.val())[0];
+         if (boardersSnap.val()[firstKey].email) {
+           email = boardersSnap.val()[firstKey].email;
          }
        }
     }
 
-    const password = `${pin}00`;
+    const password = pin;
     const apiKey = process.env.FIREBASE_WEB_API_KEY;
     
     if (!apiKey) {
@@ -489,28 +482,22 @@ const zlib = require('zlib');
 const util = require('util');
 const brotliCompress = util.promisify(zlib.brotliCompress);
 
-app.get('/api/donors/full-dump', async (req, res) => {
+app.get('/api/boarders/full-dump', async (req, res) => {
   try {
-    // 1. Fetch entire index from Firebase
-    const snapshot = await db.ref('donors_index').once('value');
+    const snapshot = await db.ref('boarders').once('value');
     const data = snapshot.val() || {};
     
-    // 2. Convert to JSON string
     const jsonString = JSON.stringify(data);
-    
-    // 3. Compress using Brotli to bypass Vercel 4.5MB limit and save bandwidth
     const compressed = await brotliCompress(jsonString, {
       params: {
-        [zlib.constants.BROTLI_PARAM_QUALITY]: 4, // Balance between speed and compression ratio
+        [zlib.constants.BROTLI_PARAM_QUALITY]: 4,
       }
     });
 
-    // 4. Set headers for Vercel Edge Caching (Cache for 1 hour, serve stale for 1 day)
     res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=86400');
     res.setHeader('Content-Encoding', 'br');
     res.setHeader('Content-Type', 'application/json');
     
-    // 5. Send compressed buffer
     res.send(compressed);
   } catch (error) {
     console.error('Full dump error:', error);
@@ -518,7 +505,7 @@ app.get('/api/donors/full-dump', async (req, res) => {
   }
 });
 
-app.get('/api/donors/delta', async (req, res) => {
+app.get('/api/boarders/delta', async (req, res) => {
   try {
     const { since } = req.query;
     if (!since) {
@@ -527,15 +514,12 @@ app.get('/api/donors/delta', async (req, res) => {
 
     const timestamp = parseInt(since, 10);
     
-    // Fetch only records updated AFTER the provided timestamp
-    const snapshot = await db.ref('donors_index')
-      .orderByChild('u')
+    const snapshot = await db.ref('boarders')
+      .orderByChild('updatedAt')
       .startAt(timestamp)
       .once('value');
       
     const data = snapshot.val() || {};
-    
-    // Small payload, standard JSON is fine
     res.json(data);
   } catch (error) {
     console.error('Delta fetch error:', error);
